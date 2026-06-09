@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FleetFlow — Gestion de flotte</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+:root{
+  --bg:#f4f6fa; --card:#ffffff; --ink:#1a2233; --muted:#6b7588;
+  --brand:#2563eb; --brand-dark:#1d4ed8; --sidebar:#0f172a; --sidebar-ink:#cbd5e1;
+  --ok:#16a34a; --warn:#d97706; --danger:#dc2626; --border:#e3e8f0;
+  --radius:12px; --shadow:0 1px 3px rgba(16,24,40,.08);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--ink);display:flex;min-height:100vh}
+body.auth-locked aside,body.auth-locked main{display:none}
+/* ---------- Sidebar ---------- */
+aside{width:230px;background:var(--sidebar);color:var(--sidebar-ink);display:flex;flex-direction:column;position:fixed;top:0;bottom:0;left:0;z-index:50;transition:transform .2s}
+.logo{display:flex;align-items:center;gap:10px;padding:20px 18px;font-size:19px;font-weight:700;color:#fff}
+.logo span{background:var(--brand);border-radius:8px;width:34px;height:34px;display:grid;place-items:center;font-size:18px}
+nav{flex:1;padding:8px;overflow-y:auto}
+nav a{display:flex;align-items:center;gap:11px;padding:10px 14px;border-radius:9px;color:var(--sidebar-ink);text-decoration:none;font-size:14.5px;margin-bottom:2px}
+nav a:hover{background:rgba(255,255,255,.07);color:#fff}
+nav a.active{background:var(--brand);color:#fff}
+nav a .ico{width:20px;text-align:center}
+.sidebar-foot{padding:12px 16px;font-size:11.5px;color:#94a3b8;border-top:1px solid rgba(255,255,255,.08)}
+.sidebar-foot .who{color:#e2e8f0;font-weight:600;font-size:12px;word-break:break-all}
+.sidebar-foot button{margin-top:8px;width:100%;background:rgba(255,255,255,.08);color:#e2e8f0;border:none;border-radius:7px;padding:7px;font-size:12px;cursor:pointer}
+.sidebar-foot button:hover{background:rgba(255,255,255,.15)}
+.syncdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;background:#16a34a}
+/* ---------- Main ---------- */
+main{flex:1;margin-left:230px;padding:26px 30px;max-width:1280px}
+.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px;gap:12px;flex-wrap:wrap}
+h1{font-size:22px}
+.sub{color:var(--muted);font-size:13.5px;margin-top:3px}
+/* ---------- Components ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;background:var(--brand);color:#fff;border:none;border-radius:9px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer}
+.btn:hover{background:var(--brand-dark)}
+.btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--border)}
+.btn.ghost:hover{background:#f1f5f9}
+.btn.sm{padding:6px 10px;font-size:12.5px;border-radius:7px}
+.btn.danger{background:var(--danger)}
+.btn.block{width:100%}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:22px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow)}
+.card .label{font-size:12.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600}
+.card .value{font-size:27px;font-weight:700;margin-top:6px}
+.card .hint{font-size:12px;color:var(--muted);margin-top:4px}
+.panel{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:22px;overflow:hidden}
+.panel h2{font-size:15px;padding:15px 18px;border-bottom:1px solid var(--border)}
+.panel .body{padding:18px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;padding:11px 16px;background:#f8fafc;color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border)}
+td{padding:12px 16px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#f8fafc}
+.badge{display:inline-block;padding:3px 10px;border-radius:99px;font-size:11.5px;font-weight:600}
+.b-ok{background:#dcfce7;color:#15803d}.b-warn{background:#fef3c7;color:#b45309}
+.b-danger{background:#fee2e2;color:#b91c1c}.b-info{background:#dbeafe;color:#1d4ed8}
+.b-gray{background:#e2e8f0;color:#475569}.b-purple{background:#ede9fe;color:#6d28d9}
+.empty{padding:34px;text-align:center;color:var(--muted);font-size:14px}
+.search{padding:10px 14px;border:1px solid var(--border);border-radius:9px;font-size:14px;width:240px;background:#fff}
+.notice{padding:12px 16px;border-radius:10px;font-size:13px;margin-bottom:16px}
+.notice.warn{background:#fef3c7;color:#92400e;border:1px solid #fde68a}
+.notice.err{background:#fee2e2;color:#991b1b;border:1px solid #fecaca}
+.notice.ok{background:#dcfce7;color:#166534;border:1px solid #bbf7d0}
+/* alerts */
+.alert-item{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--border);font-size:13.5px}
+.alert-item:last-child{border-bottom:none}
+.dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+/* chart */
+.chart{display:flex;align-items:flex-end;gap:10px;height:160px;padding:18px}
+.chart .bar-wrap{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end}
+.chart .bar{width:100%;max-width:46px;background:linear-gradient(180deg,#3b82f6,#2563eb);border-radius:6px 6px 0 0;min-height:3px}
+.chart .lbl{font-size:11px;color:var(--muted)}
+.chart .val{font-size:11px;font-weight:600}
+/* calendar */
+.cal-head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border)}
+.cal-head .month{font-size:16px;font-weight:700;text-transform:capitalize}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr)}
+.cal-dow{padding:8px 6px;text-align:center;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;background:#f8fafc;border-bottom:1px solid var(--border)}
+.cal-cell{min-height:96px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:6px;cursor:pointer;position:relative}
+.cal-cell:nth-child(7n){border-right:none}
+.cal-cell:hover{background:#f8fafc}
+.cal-cell.other{background:#fafbfd;color:#b6bdc9}
+.cal-cell .dnum{font-size:12px;font-weight:600;margin-bottom:4px}
+.cal-cell.today .dnum{background:var(--brand);color:#fff;border-radius:99px;width:22px;height:22px;display:inline-grid;place-items:center}
+.evt{display:block;font-size:10.5px;font-weight:600;border-radius:5px;padding:2px 6px;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.evt.e-rappel{background:#dbeafe;color:#1d4ed8}
+.evt.e-maint{background:#fef3c7;color:#b45309}
+.evt.e-ct{background:#fee2e2;color:#b91c1c}
+.evt.e-done{background:#e2e8f0;color:#64748b;text-decoration:line-through}
+/* legal */
+details.law{border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:#fff;overflow:hidden}
+details.law summary{padding:14px 16px;font-weight:600;font-size:14px;cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px}
+details.law summary::-webkit-details-marker{display:none}
+details.law summary:hover{background:#f8fafc}
+details.law .law-body{padding:4px 16px 16px 16px;font-size:13.5px;line-height:1.65;color:#334155}
+details.law .law-body p{margin-bottom:8px}
+details.law .law-body strong{color:var(--ink)}
+.law-tag{font-size:10.5px;background:#ede9fe;color:#6d28d9;border-radius:99px;padding:2px 8px;font-weight:700;margin-left:auto;flex-shrink:0}
+/* modal */
+.overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);display:none;place-items:center;z-index:100;padding:16px}
+.overlay.open{display:grid}
+.modal{background:#fff;border-radius:14px;width:100%;max-width:520px;max-height:92vh;overflow:auto;padding:24px}
+.modal h3{font-size:17px;margin-bottom:18px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin-bottom:5px}
+.field input,.field select,.field textarea{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;background:#fff}
+.field input:focus,.field select:focus{outline:2px solid #bfdbfe;border-color:var(--brand)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
+.actions-cell{white-space:nowrap}
+.icon-btn{background:none;border:none;cursor:pointer;font-size:15px;padding:4px 6px;border-radius:6px}
+.icon-btn:hover{background:#e2e8f0}
+.menu-btn{display:none;background:none;border:1px solid var(--border);border-radius:8px;padding:8px 11px;font-size:16px;cursor:pointer}
+/* ---------- Auth screen ---------- */
+#auth-screen{position:fixed;inset:0;z-index:200;display:none;place-items:center;background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 100%);padding:16px;overflow:auto}
+#auth-screen.open{display:grid}
+.auth-card{background:#fff;border-radius:16px;padding:34px;width:100%;max-width:420px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.auth-card .auth-logo{display:flex;align-items:center;justify-content:center;gap:10px;font-size:22px;font-weight:800;margin-bottom:6px}
+.auth-card .auth-logo span{background:var(--brand);color:#fff;border-radius:9px;width:38px;height:38px;display:grid;place-items:center;font-size:19px}
+.auth-card .auth-sub{text-align:center;color:var(--muted);font-size:13.5px;margin-bottom:22px}
+.auth-tabs{display:flex;background:#f1f5f9;border-radius:9px;padding:4px;margin-bottom:18px}
+.auth-tabs button{flex:1;border:none;background:none;padding:8px;border-radius:7px;font-size:13.5px;font-weight:600;cursor:pointer;color:var(--muted)}
+.auth-tabs button.on{background:#fff;color:var(--ink);box-shadow:var(--shadow)}
+.auth-sep{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:12px;margin:16px 0}
+.auth-sep::before,.auth-sep::after{content:'';flex:1;height:1px;background:var(--border)}
+.g-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;border:1px solid var(--border);background:#fff;border-radius:9px;padding:11px;font-size:14px;font-weight:600;cursor:pointer}
+.g-btn:hover{background:#f8fafc}
+.auth-link{font-size:12.5px;color:var(--brand);cursor:pointer;text-decoration:underline;background:none;border:none}
+.auth-msg{font-size:13px;margin-top:12px;text-align:center}
+.mfa-code input{text-align:center;font-size:22px;letter-spacing:8px;font-weight:700}
+.qr-box{text-align:center;margin:14px 0}
+.qr-box img{width:190px;height:190px;border:1px solid var(--border);border-radius:10px}
+.secret-box{font-family:monospace;background:#f1f5f9;border-radius:8px;padding:10px;font-size:12.5px;word-break:break-all;text-align:center;margin-bottom:12px}
+@media(max-width:860px){
+  aside{transform:translateX(-100%)}aside.open{transform:translateX(0)}
+  main{margin-left:0;padding:18px}
+  .menu-btn{display:inline-block}
+  .search{width:100%}
+  .cal-cell{min-height:64px}
+  .evt{font-size:9px}
+}
+</style>
+</head>
+<body>
+
+<!-- ============ AUTH SCREEN ============ -->
+<div id="auth-screen"><div class="auth-card" id="auth-card"></div></div>
+
+<aside id="sidebar">
+  <div class="logo"><span>🚐</span>FleetFlow</div>
+  <nav id="nav">
+    <a href="#dashboard" data-page="dashboard"><span class="ico">📊</span>Tableau de bord</a>
+    <a href="#vehicles" data-page="vehicles"><span class="ico">🚗</span>Véhicules</a>
+    <a href="#drivers" data-page="drivers"><span class="ico">👤</span>Conducteurs</a>
+    <a href="#maintenance" data-page="maintenance"><span class="ico">🔧</span>Maintenance</a>
+    <a href="#fuel" data-page="fuel"><span class="ico">⛽</span>Carburant</a>
+    <a href="#agenda" data-page="agenda"><span class="ico">📅</span>Agenda</a>
+    <a href="#legal" data-page="legal"><span class="ico">⚖️</span>Juridique</a>
+    <a href="#settings" data-page="settings"><span class="ico">⚙️</span>Paramètres</a>
+  </nav>
+  <div class="sidebar-foot" id="side-foot">FleetFlow v2.0</div>
+</aside>
+
+<main>
+  <div class="topbar">
+    <div style="display:flex;align-items:center;gap:12px">
+      <button class="menu-btn" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
+      <div><h1 id="page-title">Tableau de bord</h1><div class="sub" id="page-sub"></div></div>
+    </div>
+    <div id="page-actions"></div>
+  </div>
+  <div id="content"></div>
+</main>
+
+<div class="overlay" id="overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modal"></div>
+</div>
+
+<script>
+/* ============================================================
+   CONFIGURATION SUPABASE
+   1. Crée un projet gratuit sur https://supabase.com
+   2. Settings → API : copie l'URL du projet et la clé "anon public"
+   3. Colle-les ci-dessous entre les guillemets
+   (laisse vide pour utiliser l'app en mode local sans compte)
+   ============================================================ */
+const SUPABASE_URL = 'https://kstslsvikyyiyqjmflkk.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_-sTFyTI_7xK9U-Qd-7Ujcw_n0oz8H8l';
+
+/* ================= STATE ================= */
+const KEY='fleetflow_data_v1';
+const DEFAULTS={vehicles:[],drivers:[],maints:[],fuels:[],reminders:[]};
+const CLOUD = !!(SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase);
+const sb = CLOUD ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+let user=null, syncTimer=null, syncState='ok';
+
+let db = loadLocal();
+function withDefaults(d){ return Object.assign({},DEFAULTS,d||{}); }
+function loadLocal(){
+  try{ const d=JSON.parse(localStorage.getItem(KEY)); if(d&&d.vehicles) return withDefaults(d); }catch(e){}
+  return withDefaults();
+}
+function save(){
+  localStorage.setItem(KEY,JSON.stringify(db));
+  if(CLOUD&&user){
+    syncState='pending'; renderSideFoot();
+    clearTimeout(syncTimer);
+    syncTimer=setTimeout(pushCloud,800);
+  }
+}
+async function pushCloud(){
+  try{
+    const {error}=await sb.from('fleet_data').upsert({user_id:user.id,data:db,updated_at:new Date().toISOString()});
+    syncState=error?'err':'ok';
+  }catch(e){ syncState='err'; }
+  renderSideFoot();
+}
+async function loadCloud(){
+  const {data,error}=await sb.from('fleet_data').select('data').eq('user_id',user.id).maybeSingle();
+  if(error){ syncState='err'; renderSideFoot(); return; }
+  if(data&&data.data&&data.data.vehicles){
+    db=withDefaults(data.data);
+    localStorage.setItem(KEY,JSON.stringify(db));
+  } else {
+    /* première connexion : on pousse les éventuelles données locales */
+    await pushCloud();
+  }
+  syncState='ok';
+}
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+
+/* ================= HELPERS ================= */
+const eur=n=>(n||0).toLocaleString('fr-FR',{style:'currency',currency:'EUR'});
+const num=n=>(n||0).toLocaleString('fr-FR');
+const fdate=d=>d?new Date(d).toLocaleDateString('fr-FR'):'—';
+const today=()=>new Date().toISOString().slice(0,10);
+const esc=s=>(s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const veh=id=>db.vehicles.find(v=>v.id===id);
+const drv=id=>db.drivers.find(d=>d.id===id);
+const vehName=id=>{const v=veh(id);return v?`${v.marque} ${v.modele} (${v.immat})`:'—';};
+const drvName=id=>{const d=drv(id);return d?`${d.prenom} ${d.nom}`:'—';};
+const daysUntil=d=>Math.ceil((new Date(d)-new Date())/86400000);
+
+const STATUTS={dispo:['Disponible','b-ok'],mission:['En mission','b-info'],garage:['Au garage','b-warn'],hs:['Hors service','b-danger']};
+const MTYPES=['Révision','Vidange','Contrôle technique','Pneus','Freins','Courroie','Batterie','Carrosserie','Autre'];
+
+function getAlerts(){
+  const out=[];
+  db.maints.filter(m=>m.statut==='planifie'&&m.date).forEach(m=>{
+    const d=daysUntil(m.date);
+    if(d<0) out.push({level:'danger',txt:`${m.type} en retard de ${-d} j — ${vehName(m.vehicleId)}`,date:m.date});
+    else if(d<=30) out.push({level:'warn',txt:`${m.type} dans ${d} j (${fdate(m.date)}) — ${vehName(m.vehicleId)}`,date:m.date});
+  });
+  db.vehicles.filter(v=>v.ctDate).forEach(v=>{
+    const d=daysUntil(v.ctDate);
+    if(d<0) out.push({level:'danger',txt:`Contrôle technique expiré depuis ${-d} j — ${vehName(v.id)}`,date:v.ctDate});
+    else if(d<=60) out.push({level:'warn',txt:`Contrôle technique dans ${d} j (${fdate(v.ctDate)}) — ${vehName(v.id)}`,date:v.ctDate});
+  });
+  db.reminders.filter(r=>!r.done&&r.date).forEach(r=>{
+    const d=daysUntil(r.date);
+    if(d<0) out.push({level:'danger',txt:`Rappel en retard : ${r.titre}${r.vehicleId?' — '+vehName(r.vehicleId):''}`,date:r.date});
+    else if(d<=7) out.push({level:'info',txt:`Rappel ${d===0?"aujourd'hui":'dans '+d+' j'} : ${r.titre}${r.vehicleId?' — '+vehName(r.vehicleId):''}`,date:r.date});
+  });
+  return out.sort((a,b)=>new Date(a.date)-new Date(b.date));
+}
+function vehicleCost(id){
+  const m=db.maints.filter(x=>x.vehicleId===id&&x.statut==='fait').reduce((s,x)=>s+(+x.cout||0),0);
+  const f=db.fuels.filter(x=>x.vehicleId===id).reduce((s,x)=>s+(+x.montant||0),0);
+  return m+f;
+}
+function vehicleConso(id){
+  const fs=db.fuels.filter(f=>f.vehicleId===id&&f.km).sort((a,b)=>a.km-b.km);
+  if(fs.length<2) return null;
+  let litres=0,dist=0;
+  for(let i=1;i<fs.length;i++){ litres+=+fs[i].litres||0; dist+=fs[i].km-fs[i-1].km; }
+  return dist>0?(litres/dist*100):null;
+}
+
+/* ================= AUTH ================= */
+function showAuth(view){
+  document.body.classList.add('auth-locked');
+  document.getElementById('auth-screen').classList.add('open');
+  renderAuth(view||'login');
+}
+function hideAuth(){
+  document.body.classList.remove('auth-locked');
+  document.getElementById('auth-screen').classList.remove('open');
+}
+function authMsg(html,type){
+  const el=document.getElementById('auth-msg');
+  if(el) el.innerHTML=`<div class="auth-msg" style="color:${type==='err'?'var(--danger)':'var(--ok)'}">${html}</div>`;
+}
+function renderAuth(view){
+  const card=document.getElementById('auth-card');
+  const head=`<div class="auth-logo"><span>🚐</span>FleetFlow</div><div class="auth-sub">Gestion de flotte de véhicules</div>`;
+  if(view==='login'||view==='signup'){
+    card.innerHTML=`${head}
+    <div class="auth-tabs">
+      <button class="${view==='login'?'on':''}" onclick="renderAuth('login')">Connexion</button>
+      <button class="${view==='signup'?'on':''}" onclick="renderAuth('signup')">Créer un compte</button>
+    </div>
+    <form onsubmit="${view==='login'?'doLogin(event)':'doSignup(event)'}">
+      <div class="field"><label>Email</label><input name="email" type="email" required autocomplete="email"></div>
+      <div class="field"><label>Mot de passe</label><input name="password" type="password" required minlength="8" autocomplete="${view==='login'?'current-password':'new-password'}" placeholder="${view==='signup'?'8 caractères minimum':''}"></div>
+      <button class="btn block">${view==='login'?'Se connecter':'Créer mon compte'}</button>
+    </form>
+    <div class="auth-sep">ou</div>
+    <button class="g-btn" onclick="doGoogle()">
+      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3l5.7-5.7C34.3 6.1 29.4 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.6-.4-3.9z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3l5.7-5.7C34.3 6.1 29.4 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C36.9 39.2 44 34 44 24c0-1.3-.1-2.6-.4-3.9z"/></svg>
+      Continuer avec Google
+    </button>
+    ${view==='login'?`<div style="text-align:center;margin-top:14px"><button class="auth-link" onclick="renderAuth('forgot')">Mot de passe oublié ?</button></div>`:''}
+    <div id="auth-msg"></div>`;
+  }
+  else if(view==='forgot'){
+    card.innerHTML=`${head}
+    <form onsubmit="doForgot(event)">
+      <div class="field"><label>Email du compte</label><input name="email" type="email" required></div>
+      <button class="btn block">Envoyer le lien de réinitialisation</button>
+    </form>
+    <div style="text-align:center;margin-top:14px"><button class="auth-link" onclick="renderAuth('login')">← Retour à la connexion</button></div>
+    <div id="auth-msg"></div>`;
+  }
+  else if(view==='recovery'){
+    card.innerHTML=`${head}
+    <p style="font-size:13.5px;color:var(--muted);margin-bottom:16px;text-align:center">Choisis un nouveau mot de passe.</p>
+    <form onsubmit="doRecovery(event)">
+      <div class="field"><label>Nouveau mot de passe</label><input name="password" type="password" required minlength="8"></div>
+      <button class="btn block">Mettre à jour</button>
+    </form>
+    <div id="auth-msg"></div>`;
+  }
+  else if(view==='mfa'){
+    card.innerHTML=`${head}
+    <p style="font-size:13.5px;color:var(--muted);margin-bottom:16px;text-align:center">🔐 Double authentification activée.<br>Saisis le code à 6 chiffres de ton application (Google Authenticator…).</p>
+    <form onsubmit="doMfaVerify(event)">
+      <div class="field mfa-code"><input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required placeholder="••••••" autofocus></div>
+      <button class="btn block">Vérifier</button>
+    </form>
+    <div style="text-align:center;margin-top:14px"><button class="auth-link" onclick="doLogout()">Annuler / changer de compte</button></div>
+    <div id="auth-msg"></div>`;
+  }
+}
+async function doLogin(e){
+  e.preventDefault();
+  const f=Object.fromEntries(new FormData(e.target));
+  authMsg('Connexion…');
+  const {error}=await sb.auth.signInWithPassword({email:f.email,password:f.password});
+  if(error){ authMsg('Identifiants incorrects ou compte inexistant.','err'); return; }
+  await afterSession();
+}
+async function doSignup(e){
+  e.preventDefault();
+  const f=Object.fromEntries(new FormData(e.target));
+  authMsg('Création du compte…');
+  const {data,error}=await sb.auth.signUp({email:f.email,password:f.password});
+  if(error){ authMsg(esc(error.message),'err'); return; }
+  if(data.session){ await afterSession(); }
+  else authMsg('Compte créé ✅ Vérifie ta boîte mail pour confirmer ton adresse, puis connecte-toi.');
+}
+async function doGoogle(){
+  authMsg('Redirection vers Google…');
+  const {error}=await sb.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+location.pathname}});
+  if(error) authMsg(esc(error.message),'err');
+}
+async function doForgot(e){
+  e.preventDefault();
+  const f=Object.fromEntries(new FormData(e.target));
+  const {error}=await sb.auth.resetPasswordForEmail(f.email,{redirectTo:location.origin+location.pathname});
+  authMsg(error?esc(error.message):'Email envoyé ✅ Clique sur le lien reçu pour définir un nouveau mot de passe.',error?'err':'ok');
+}
+async function doRecovery(e){
+  e.preventDefault();
+  const f=Object.fromEntries(new FormData(e.target));
+  const {error}=await sb.auth.updateUser({password:f.password});
+  if(error){ authMsg(esc(error.message),'err'); return; }
+  await afterSession();
+}
+let mfaChallenge=null;
+async function startMfaChallenge(){
+  const {data:factors}=await sb.auth.mfa.listFactors();
+  const f=(factors&&factors.totp&&factors.totp[0])||null;
+  if(!f){ await finishLogin(); return; }
+  const {data:ch,error}=await sb.auth.mfa.challenge({factorId:f.id});
+  if(error){ showAuth('login'); authMsg(esc(error.message),'err'); return; }
+  mfaChallenge={factorId:f.id,challengeId:ch.id};
+  showAuth('mfa');
+}
+async function doMfaVerify(e){
+  e.preventDefault();
+  const code=new FormData(e.target).get('code');
+  authMsg('Vérification…');
+  const {error}=await sb.auth.mfa.verify({factorId:mfaChallenge.factorId,challengeId:mfaChallenge.challengeId,code});
+  if(error){ authMsg('Code invalide, réessaie.','err'); return; }
+  await finishLogin();
+}
+async function afterSession(){
+  const {data:aal}=await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+  if(aal&&aal.currentLevel==='aal1'&&aal.nextLevel==='aal2'){ await startMfaChallenge(); return; }
+  await finishLogin();
+}
+async function finishLogin(){
+  const {data:{user:u}}=await sb.auth.getUser();
+  user=u;
+  await loadCloud();
+  hideAuth(); renderSideFoot(); route();
+}
+async function doLogout(){
+  await sb.auth.signOut();
+  user=null;
+  localStorage.removeItem(KEY);
+  db=withDefaults();
+  showAuth('login');
+}
+function renderSideFoot(){
+  const el=document.getElementById('side-foot');
+  if(!CLOUD){ el.innerHTML='FleetFlow v2.0<br>Mode local — données sur cet appareil'; return; }
+  if(!user){ el.innerHTML='FleetFlow v2.0'; return; }
+  const col=syncState==='ok'?'#16a34a':syncState==='pending'?'#d97706':'#dc2626';
+  const txt=syncState==='ok'?'Synchronisé':syncState==='pending'?'Synchronisation…':'Erreur de sync';
+  el.innerHTML=`<div class="who">${esc(user.email||'')}</div>
+  <div style="margin-top:5px"><span class="syncdot" style="background:${col}"></span>${txt}</div>
+  <button onclick="doLogout()">Se déconnecter</button>`;
+}
+
+/* ================= ROUTER ================= */
+const pages={dashboard:renderDashboard,vehicles:renderVehicles,drivers:renderDrivers,maintenance:renderMaintenance,fuel:renderFuel,agenda:renderAgenda,legal:renderLegal,settings:renderSettings};
+function route(){
+  const p=(location.hash||'#dashboard').slice(1).split('/')[0];
+  const page=pages[p]?p:'dashboard';
+  document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.page===page));
+  document.getElementById('sidebar').classList.remove('open');
+  pages[page]();
+}
+window.addEventListener('hashchange',route);
+function setHeader(title,sub,actionsHtml){
+  document.getElementById('page-title').textContent=title;
+  document.getElementById('page-sub').textContent=sub||'';
+  document.getElementById('page-actions').innerHTML=actionsHtml||'';
+}
+const C=()=>document.getElementById('content');
+
+/* ================= DASHBOARD ================= */
+function renderDashboard(){
+  const alerts=getAlerts();
+  const totalCost=db.vehicles.reduce((s,v)=>s+vehicleCost(v.id),0);
+  const dispo=db.vehicles.filter(v=>v.statut==='dispo').length;
+  const mission=db.vehicles.filter(v=>v.statut==='mission').length;
+  setHeader('Tableau de bord','Vue d’ensemble de votre flotte','');
+  const months=[];
+  for(let i=5;i>=0;i--){
+    const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()-i);
+    const key=d.toISOString().slice(0,7);
+    const lbl=d.toLocaleDateString('fr-FR',{month:'short'});
+    let tot=0;
+    db.fuels.forEach(f=>{if((f.date||'').startsWith(key))tot+=+f.montant||0;});
+    db.maints.forEach(m=>{if(m.statut==='fait'&&(m.date||'').startsWith(key))tot+=+m.cout||0;});
+    months.push({lbl,tot});
+  }
+  const max=Math.max(...months.map(m=>m.tot),1);
+  C().innerHTML=`
+  <div class="cards">
+    <div class="card"><div class="label">Véhicules</div><div class="value">${db.vehicles.length}</div><div class="hint">${dispo} disponibles · ${mission} en mission</div></div>
+    <div class="card"><div class="label">Conducteurs</div><div class="value">${db.drivers.length}</div></div>
+    <div class="card"><div class="label">Alertes actives</div><div class="value" style="color:${alerts.length?'var(--danger)':'var(--ok)'}">${alerts.length}</div><div class="hint">échéances, CT, rappels</div></div>
+    <div class="card"><div class="label">Coût total flotte</div><div class="value">${eur(totalCost)}</div><div class="hint">carburant + entretiens</div></div>
+  </div>
+  <div class="panel">
+    <h2>⚠️ Alertes & échéances</h2>
+    ${alerts.length?alerts.map(a=>`<div class="alert-item"><span class="dot" style="background:var(--${a.level==='danger'?'danger':a.level==='warn'?'warn':'brand'})"></span>${esc(a.txt)}</div>`).join(''):'<div class="empty">Aucune alerte. Tout est en ordre ✅</div>'}
+  </div>
+  <div class="panel">
+    <h2>💶 Dépenses mensuelles (6 derniers mois)</h2>
+    <div class="chart">
+      ${months.map(m=>`<div class="bar-wrap"><span class="val">${m.tot?Math.round(m.tot)+'€':''}</span><div class="bar" style="height:${Math.round(m.tot/max*100)}%"></div><span class="lbl">${m.lbl}</span></div>`).join('')}
+    </div>
+  </div>
+  <div class="panel">
+    <h2>🚗 État de la flotte</h2>
+    ${db.vehicles.length?`<table><thead><tr><th>Véhicule</th><th>Statut</th><th>Conducteur</th><th>Km</th><th>Conso moy.</th><th>Coût total</th></tr></thead><tbody>
+    ${db.vehicles.map(v=>{const c=vehicleConso(v.id);return `<tr>
+      <td><strong>${esc(v.marque)} ${esc(v.modele)}</strong><br><span style="color:var(--muted);font-size:12px">${esc(v.immat)}</span></td>
+      <td><span class="badge ${STATUTS[v.statut][1]}">${STATUTS[v.statut][0]}</span></td>
+      <td>${esc(drvName(v.driverId))}</td>
+      <td>${num(v.km)} km</td>
+      <td>${c?c.toFixed(1)+' L/100':'—'}</td>
+      <td>${eur(vehicleCost(v.id))}</td></tr>`;}).join('')}
+    </tbody></table>`:'<div class="empty">Aucun véhicule. Ajoutez-en un depuis l’onglet Véhicules, ou chargez les données de démo dans Paramètres.</div>'}
+  </div>`;
+}
+
+/* ================= VEHICLES ================= */
+let vehSearch='';
+function renderVehicles(){
+  setHeader('Véhicules',`${db.vehicles.length} véhicule(s) dans la flotte`,
+    `<button class="btn" onclick="vehForm()">+ Ajouter un véhicule</button>`);
+  const q=vehSearch.toLowerCase();
+  const list=db.vehicles.filter(v=>!q||`${v.immat} ${v.marque} ${v.modele}`.toLowerCase().includes(q));
+  C().innerHTML=`
+  <div style="margin-bottom:14px"><input class="search" placeholder="🔍 Rechercher (immat, marque…)" value="${esc(vehSearch)}" oninput="vehSearch=this.value;renderVehicles()"></div>
+  <div class="panel">
+  ${list.length?`<table><thead><tr><th>Immat.</th><th>Véhicule</th><th>Type</th><th>Statut</th><th>Conducteur</th><th>Km</th><th>Prochain CT</th><th></th></tr></thead><tbody>
+  ${list.map(v=>{
+    const ct=v.ctDate?daysUntil(v.ctDate):null;
+    const ctBadge=ct===null?'—':ct<0?`<span class="badge b-danger">${fdate(v.ctDate)}</span>`:ct<=60?`<span class="badge b-warn">${fdate(v.ctDate)}</span>`:fdate(v.ctDate);
+    return `<tr>
+    <td><strong>${esc(v.immat)}</strong></td>
+    <td>${esc(v.marque)} ${esc(v.modele)}${v.annee?' <span style="color:var(--muted)">('+esc(v.annee)+')</span>':''}</td>
+    <td>${esc(v.type||'—')}</td>
+    <td><span class="badge ${STATUTS[v.statut][1]}">${STATUTS[v.statut][0]}</span></td>
+    <td>${esc(drvName(v.driverId))}</td>
+    <td>${num(v.km)}</td>
+    <td>${ctBadge}</td>
+    <td class="actions-cell"><button class="icon-btn" title="Modifier" onclick="vehForm('${v.id}')">✏️</button><button class="icon-btn" title="Supprimer" onclick="delVehicle('${v.id}')">🗑️</button></td></tr>`;}).join('')}
+  </tbody></table>`:'<div class="empty">Aucun véhicule trouvé.</div>'}
+  </div>`;
+}
+function vehForm(id){
+  const v=id?veh(id):{statut:'dispo'};
+  openModal(`<h3>${id?'Modifier':'Ajouter'} un véhicule</h3>
+  <form onsubmit="saveVehicle(event,'${id||''}')">
+    <div class="row2">
+      <div class="field"><label>Immatriculation *</label><input name="immat" required value="${esc(v.immat||'')}" placeholder="AB-123-CD"></div>
+      <div class="field"><label>Année</label><input name="annee" type="number" min="1980" max="2030" value="${esc(v.annee||'')}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Marque *</label><input name="marque" required value="${esc(v.marque||'')}" placeholder="Renault"></div>
+      <div class="field"><label>Modèle *</label><input name="modele" required value="${esc(v.modele||'')}" placeholder="Trafic"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Type</label><select name="type">${['Voiture','Utilitaire','Camion','Deux-roues','Autre'].map(t=>`<option ${v.type===t?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div class="field"><label>Statut</label><select name="statut">${Object.entries(STATUTS).map(([k,s])=>`<option value="${k}" ${v.statut===k?'selected':''}>${s[0]}</option>`).join('')}</select></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Kilométrage</label><input name="km" type="number" min="0" value="${v.km||''}"></div>
+      <div class="field"><label>Prochain contrôle technique</label><input name="ctDate" type="date" value="${esc(v.ctDate||'')}"></div>
+    </div>
+    <div class="field"><label>Conducteur attitré</label><select name="driverId"><option value="">— Aucun —</option>${db.drivers.map(d=>`<option value="${d.id}" ${v.driverId===d.id?'selected':''}>${esc(d.prenom)} ${esc(d.nom)}</option>`).join('')}</select></div>
+    <div class="field"><label>Notes</label><textarea name="notes" rows="2">${esc(v.notes||'')}</textarea></div>
+    <div class="modal-actions"><button type="button" class="btn ghost" onclick="closeModal()">Annuler</button><button class="btn">Enregistrer</button></div>
+  </form>`);
+}
+function saveVehicle(e,id){
+  e.preventDefault();
+  const f=Object.fromEntries(new FormData(e.target));
+  f.km=+f.km||0;
+  if(id){ Object.assign(veh(id),f); } else { db.vehicles.push({id:uid(),...f}); }
+  save(); closeModal(); route();
+}
+function delVehicle(id){
+  if(!confirm('Supprimer ce véhicule et son historique (entretiens, pleins) ?'))return;
+  db.vehicles=db.vehicles.filter(v=>v.id!==id);
+  db.maints=db.maints.filter(m=>m.vehicleId!==id);
+  db.fuels=db.fuels.filter(f=>f.vehicleId!==id);
+  save(); route();
+}
+
+/* ================= DRIVERS ================= */
+function renderDrivers(){
+  setHeader('Conducteurs',`${db.drivers.length} conducteur(s)`,
+    `<button class="btn" onclick="drvForm()">+ Ajouter un conducteur</button>`);
+  C().innerHTML=`<div class="panel">
+  ${db.drivers.length?`<table><thead><tr><th>Nom</th><th>Permis</th><th>Téléphone</th><th>Email</th><th>Véhicule(s) attribué(s)</th><th></th></tr></thead><tbody>
+  ${db.drivers.map(d=>{
+    const vs=db.vehicles.filter(v=>v.driverId===d.id);
+    return `<tr>
+    <td><strong>${esc(d.prenom)} ${esc(d.nom)}</strong></td>
+    <td>${esc(d.permis||'—')}</td>
+    <td>${esc(d.tel||'—')}</td>
+    <td>${esc(d.email||'—')}</td>
+    <td>${vs.length?vs.map(v=>`<span class="badge b-info">${esc(v.immat)}</span>`).join(' '):'<span style="color:var(--muted)">—</span>'}</td>
+    <td class="actions-cell"><button class="icon-btn" onclick="drvForm('${d.id}')">✏️</button><button class="icon-btn" onclick="delDriver('${d.id}')">🗑️</button></td></tr>`;}).join('')}
+  </tbody></table>`:'<div class="empty">Aucun conducteur enregistré.</div>'}
+  </div>`;
+}
+function drvForm(id){
+  const d=id?drv(id):{};
+  openModal(`<h3>${id?'Modifier':'Ajouter'} un conducteur</h3>
+  <form onsubmit="saveDriver(event,'${id||''}')">
+    <div class="row2">
+      <div class="field"><label>Prénom *</label><input name="prenom" required value="${esc(d.prenom||'')}"></div>
+      <div class="field"><label>Nom *</label><input name="nom" required value="${esc(d.nom||'')}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Permis</label><select name="permis">${['B','BE','C','CE','D','A'].map(p=>`<option ${d.permis===p?'selected':''}>${p}</option>`).join('')}</select></div>
+      <div class="field"><label>Téléphone</label><input name="tel" value="${esc(d.tel||'')}"></div>
+    </div>
+    <div class="field"><label>Email</label><input name="email" type="email" value="${esc(d.email||'')}"></div>
+    <div class="modal-actions"><button type="button" class="btn ghost" onclick="closeModal()">Annuler</button><button class="btn">Enregistrer</button></div>
+  </form>`);
+}
+function saveDriver(e,id){
+  e.preventDefault();
+  const f=Object.fromEntries(new FormData(e.target));
+  if(id){ Object.assign(drv(id),f); } else { db.drivers.push({id:uid(),...f}); }
+  save(); closeModal(); route();
+}
+function delDriver(id){
+  if(!confirm('Supprimer ce conducteur ?'))return;
+  db.drivers=db.drivers.filter(d=>d.id!==id);
+  db.vehicles.forEach(v=>{if(v.driverId===id)v.driverId='';});
+  save(); route();
+}
+
+/* ================= MAINTENANCE ================= */
+function renderMaintenance(){
+  const planned=db.maints.filter(m=>m.statut==='planifie').sort((a,b)=>new Date(a.date)-new Date(b.date));
+  const done=db.maints.filter(m=>m.statut==='fait').sort((a,b)=>new Date(b.date)-new Date(a.date));
+  setHeader('Maintenance',`${planned.length} planifiée(s) · ${done.length} réalisée(s)`,
+    `<button class="btn" onclick="maintForm()">+ Nouvelle intervention</button>`);
+  const row=m=>{
+    const d=m.statut==='planifie'&&m.date?daysUntil(m.date):null;
+    const when=d===null?fdate(m.date):d<0?`<span class="badge b-danger">retard ${-d} j</span>`:d<=30?`<span class="badge b-warn">${fdate(m.date)} (J-${d})</span>`:fdate(m.date);
+    return `<tr>
+    <td>${when}</td>
+    <td><strong>${esc(m.type)}</strong>${m.notes?`<br><span style="color:var(--muted);font-size:12px">${esc(m.notes)}</span>`:''}</td>
+    <td>${esc(vehName(m.vehicleId))}</td>
+    <td>${m.km?num(m.km)+' km':'—'}</td>
+    <td>${m.cout?eur(+m.cout):'—'}</td>
+    <td class="actions-cell">
+      ${m.statut==='planifie'?`<button class="btn sm" onclick="markDone('${m.id}')">✓ Fait</button> `:''}
+      <button class="icon-btn" onclick="maintForm('${m.id}')">✏️</button>
+      <button class="icon-btn" onclick="delMaint('${m.id}')">🗑️</button></td></tr>`;
+  };
+  C().innerHTML=`
+  <div class="panel"><h2>📅 Interventions planifiées</h2>
+  ${planned.length?`<table><thead><tr><th>Échéance</th><th>Type</th><th>Véhicule</th><th>Km</th><th>Coût est.</th><th></th></tr></thead><tbody>${planned.map(row).join('')}</tbody></table>`:'<div class="empty">Aucune intervention planifiée.</div>'}
+  </div>
+  <div class="panel"><h2>✅ Historique des interventions</h2>
+  ${done.length?`<table><thead><tr><th>Date</th><th>Type</th><th>Véhicule</th><th>Km</th><th>Coût</th><th></th></tr></thead><tbody>${done.map(row).join('')}</tbody></table>`:'<div class="empty">Aucune intervention réalisée.</div>'}
+  </div>`;
+}
+function maintForm(id){
+  const m=id?db.maints.find(x=>x.id===id):{statut:'planifie',date:today()};
+  if(!db.vehicles.length){alert('Ajoutez d’abord un véhicule.');return;}
+  openModal(`<h3>${id?'Modifier':'Nouvelle'} intervention</h3>
+  <form onsubmit="saveMaint(event,'${id||''}')">
+    <div class="field"><label>Véhicule *</label><select name="vehicleId" required>${db.vehicles.map(v=>`<option value="${v.id}" ${m.vehicleId===v.id?'selected':''}>${esc(vehName(v.id))}</option>`).join('')}</select></div>
+    <div class="row2">
+      <div class="field"><label>Type *</label><select name="type">${MTYPES.map(t=>`<option ${m.type===t?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div class="field"><label>Statut</label><select name="statut"><option value="planifie" ${m.statut==='planifie'?'selected':''}>Planifiée</option><option value="fait" ${m.statut==='fait'?'selected':''}>Réalisée</option></select></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Date (échéance ou réalisation) *</label><input name="date" type="date" required value="${esc(m.date||'')}"></div>
+      <div class="field"><label>Kilométrage</label><input name="km" type="number" min="0" value="${m.km||''}"></div>
+    </div>
+    <div class="field"><label>Coût (€)</label><input name="cout" type="number" step="0.01" min="0" value="${m.cout||''}"></div>
+    <div class="field"><label>Notes</label><textarea name="notes" rows="2">${esc(m.notes||'')}</textarea></div>
+    <div class="modal-actions"><button type="button" class="btn ghost" onclick="closeModal()">Annuler</button><button class="btn">Enregistrer</button></div>
+  </form>`);
+}
+function saveMaint(e,id){
+  e.preventDefault();
+  const f=Object.fromEntries(new FormData(e.target));
+  if(id){ Object.assign(db.maints.find(x=>x.id===id),f); } else { db.maints.push({id:uid(),...f}); }
+  save(); closeModal(); route();
+}
+function markDone(id){
+  const m=db.maints.find(x=>x.id===id);
+  m.statut='fait'; m.date=today();
+  save(); route();
+}
+function delMaint(id){
+  if(!confirm('Supprimer cette intervention ?'))return;
+  db.maints=db.maints.filter(m=>m.id!==id); save(); route();
+}
+
+/* ================= FUEL ================= */
+function renderFuel(){
+  const fuels=[...db.fuels].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const totL=fuels.reduce((s,f)=>s+(+f.litres||0),0);
+  const totE=fuels.reduce((s,f)=>s+(+f.montant||0),0);
+  setHeader('Carburant & coûts',`${fuels.length} plein(s) · ${num(Math.round(totL))} L · ${eur(totE)}`,
+    `<button class="btn" onclick="fuelForm()">+ Ajouter un plein</button>`);
+  C().innerHTML=`
+  <div class="cards">
+    <div class="card"><div class="label">Total carburant</div><div class="value">${eur(totE)}</div></div>
+    <div class="card"><div class="label">Volume total</div><div class="value">${num(Math.round(totL))} L</div></div>
+    <div class="card"><div class="label">Prix moyen / litre</div><div class="value">${totL?(totE/totL).toFixed(2)+' €':'—'}</div></div>
+  </div>
+  <div class="panel"><h2>⛽ Historique des pleins</h2>
+  ${fuels.length?`<table><thead><tr><th>Date</th><th>Véhicule</th><th>Litres</th><th>Montant</th><th>€/L</th><th>Km compteur</th><th></th></tr></thead><tbody>
+  ${fuels.map(f=>`<tr>
+    <td>${fdate(f.date)}</td>
+    <td>${esc(vehName(f.vehicleId))}</td>
+    <td>${(+f.litres).toFixed(1)} L</td>
+    <td>${eur(+f.montant)}</td>
+    <td>${f.litres?(+f.montant/+f.litres).toFixed(2):'—'}</td>
+    <td>${f.km?num(f.km):'—'}</td>
+    <td class="actions-cell"><button class="icon-btn" onclick="fuelForm('${f.id}')">✏️</button><button class="icon-btn" onclick="delFuel('${f.id}')">🗑️</button></td></tr>`).join('')}
+  </tbody></table>`:'<div class="empty">Aucun plein enregistré.</div>'}
+  </div>
+  <div class="panel"><h2>📈 Consommation moyenne par véhicule</h2>
+  ${db.vehicles.length?`<table><thead><tr><th>Véhicule</th><th>Conso moyenne</th><th>Coût carburant</th></tr></thead><tbody>
+  ${db.vehicles.map(v=>{const c=vehicleConso(v.id);const fc=db.fuels.filter(x=>x.vehicleId===v.id).reduce((s,x)=>s+(+x.montant||0),0);
+    return `<tr><td>${esc(vehName(v.id))}</td><td>${c?'<strong>'+c.toFixed(1)+' L/100 km</strong>':'<span style="color:var(--muted)">min. 2 pleins avec km</span>'}</td><td>${eur(fc)}</td></tr>`;}).join('')}
+  </tbody></table>`:'<div class="empty">Aucun véhicule.</div>'}
+  </div>`;
+}
+function fuelForm(id){
+  const f=id?db.fuels.find(x=>x.id===id):{date:today()};
+  if(!db.vehicles.length){alert('Ajoutez d’abord un véhicule.');return;}
+  openModal(`<h3>${id?'Modifier':'Ajouter'} un plein</h3>
+  <form onsubmit="saveFuel(event,'${id||''}')">
+    <div class="field"><label>Véhicule *</label><select name="vehicleId" required>${db.vehicles.map(v=>`<option value="${v.id}" ${f.vehicleId===v.id?'selected':''}>${esc(vehName(v.id))}</option>`).join('')}</select></div>
+    <div class="row2">
+      <div class="field"><label>Date *</label><input name="date" type="date" required value="${esc(f.date||'')}"></div>
+      <div class="field"><label>Km compteur</label><input name="km" type="number" min="0" value="${f.km||''}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Litres *</label><input name="litres" type="number" step="0.01" min="0" required value="${f.litres||''}"></div>
+      <div class="field"><label>Montant (€) *</label><input name="montant" type="number" step="0.01" min="0" required value="${f.montant||''}"></div>
+    </div>
+    <div class="modal-actions"><button type="button" class="btn ghost" onclick="closeModal()">Annuler</button><button class="btn">Enregistrer</button></div>
+  </form>`);
+}
+function saveFuel(e,id){
+  e.preventDefault();
+  const f=Object.fromEntries(new FormData(e.target));
+  f.km=+f.km||0;
+  if(id){ Object.assign(db.fuels.find(x=>x.id===id),f); }
+  else {
+    db.fuels.push({id:uid(),...f});
+    const v=veh(f.vehicleId); if(v&&f.km>(+v.km||0)){v.km=f.km;}
+  }
+  save(); closeModal(); route();
+}
+function delFuel(id){
+  if(!confirm('Supprimer ce plein ?'))return;
+  db.fuels=db.fuels.filter(f=>f.id!==id); save(); route();
+}
+
+/* ================= AGENDA ================= */
+let agCursor=new Date();
+function agEvents(){
+  /* map 'YYYY-MM-DD' -> [{cls,label,onclick}] */
+  const map={};
+  const add=(date,e)=>{ if(!date)return; (map[date]=map[date]||[]).push(e); };
+  db.reminders.forEach(r=>add(r.date,{cls:r.done?'e-done':'e-rappel',label:(r.time?r.time+' ':'')+'🔔 '+r.titre,click:`reminderForm('${r.id}')`}));
+  db.maints.filter(m=>m.statut==='planifie').forEach(m=>add(m.date,{cls:'e-maint',label:'🔧 '+m.type+' · '+(veh(m.vehicleId)?veh(m.vehicleId).immat:''),click:`maintForm('${m.id}')`}));
+  db.vehicles.filter(v=>v.ctDate).forEach(v=>add(v.ctDate,{cls:'e-ct',label:'🛂 CT '+v.immat,click:`vehForm('${v.id}')`}));
+  return map;
+}
+function renderAgenda(){
+  const upcoming=db.reminders.filter(r=>!r.done).sort((a,b)=>new Date(a.date)-new Date(b.date));
+  setHeader('Agenda','Rappels, entretiens planifiés et contrôles techniques',
+    `<button class="btn" onclick="reminderForm()">+ Nouveau rappel</button>`);
+  const y=agCursor.getFullYear(), m=agCursor.getMonth();
+  const first=new Date(y,m,1);
+  const offset=(first.getDay()+6)%7; /* lundi=0 */
+  const daysInMonth=new Date(y,m+1,0).getDate();
+  const prevDays=new Date(y,m,0).getDate();
+  const evts=agEvents();
+  const todayStr=today();
+  let cells='';
+  const totalCells=Math.ceil((offset+daysInMonth)/7)*7;
+  for(let i=0;i<totalCells;i++){
+    const dayNum=i-offset+1;
+    let cellDate, other=false, label;
+    if(dayNum<1){ other=true; label=prevDays+dayNum; cellDate=new Date(y,m-1,prevDays+dayNum); }
+    else if(dayNum>daysInMonth){ other=true; label=dayNum-daysInMonth; cellDate=new Date(y,m+1,dayNum-daysInMonth); }
+    else { label=dayNum; cellDate=new Date(y,m,dayNum); }
+    const iso=`${cellDate.getFullYear()}-${String(cellDate.getMonth()+1).padStart(2,'0')}-${String(cellDate.getDate()).padStart(2,'0')}`;
+    const es=evts[iso]||[];
+    cells+=`<div class="cal-cell ${other?'other':''} ${iso===todayStr?'today':''}" onclick="reminderForm(null,'${iso}')">
+      <div class="dnum">${label}</div>
+      ${es.slice(0,3).map(e=>`<span class="evt ${e.cls}" onclick="event.stopPropagation();${e.click}">${esc(e.label)}</span>`).join('')}
+      ${es.length>3?`<span style="font-size:10px;color:var(--muted)">+${es.length-3} autre(s)</span>`:''}
+    </div>`;
+  }
+  const monthLbl=agCursor.toLocaleDateString('fr-FR',{month:'long',year:'numeric'});
+  C().innerHTML=`
+  <div class="panel">
+    <div class="cal-head">
+      <button class="btn ghost sm" onclick="agMove(-1)">← Préc.</button>
+      <div class="month">${monthLbl}</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn ghost sm" onclick="agCursor=new Date();renderAgenda()">Aujourd'hui</button>
+        <button class="btn ghost sm" onclick="agMove(1)">Suiv. →</button>
+      </div>
+    </div>
+    <div class="cal-grid">
+      ${['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'].map(d=>`<div class="cal-dow">${d}</div>`).join('')}
+      ${cells}
+    </div>
+    <div style="padding:10px 18px;font-size:11.5px;color:var(--muted);border-top:1px solid var(--border)">
+      <span class="evt e-rappel" style="display:inline">🔔 Rappel</span>&nbsp;
+      <span class="evt e-maint" style="display:inline">🔧 Maintenance planifiée</span>&nbsp;
+      <span class="evt e-ct" style="display:inline">🛂 Contrôle technique</span>
+      &nbsp;· Clique sur un jour pour créer un rappel.
+    </div>
+  </div>
+  <div class="panel"><h2>🔔 Rappels à venir</h2>
+  ${upcoming.length?`<table><thead><tr><th>Date</th><th>Heure</th><th>Rappel</th><th>Véhicule</th><th></th></tr></thead><tbody>
+  ${upcoming.map(r=>{
+    const d=daysUntil(r.date);
+    const when=d<0?`<span class="badge b-danger">${fdate(r.date)} (retard)</span>`:d<=7?`<span class="badge b-warn">${fdate(r.date)} (J-${d})</span>`:fdate(r.date);
+    return `<tr>
+    <td>${when}</td>
+    <td>${esc(r.time||'—')}</td>
+    <td><strong>${esc(r.titre)}</strong>${r.notes?`<br><span style="color:var(--muted);font-size:12px">${esc(r.notes)}</span>`:''}</td>
+    <td>${r.vehicleId?esc(vehName(r.vehicleId)):'—'}</td>
+    <td class="actions-cell">
+      <button class="btn sm" onclick="toggleReminder('${r.id}')">✓ Fait</button>
+      <button class="icon-btn" onclick="reminderForm('${r.id}')">✏️</button>
+      <button class="icon-btn" onclick="delReminder('${r.id}')">🗑️</button></td></tr>`;}).join('')}
+  </tbody></table>`:'<div class="empty">Aucun rappel à venir. Clique sur un jour du calendrier ou sur « + Nouveau rappel ».</div>'}
+  </div>`;
+}
+function agMove(n){ agCursor.setMonth(agCursor.getMonth()+n); renderAgenda(); }
+function reminderForm(id,presetDate){
+  const r=id?db.reminders.find(x=>x.id===id):{date:presetDate||today()};
+  openModal(`<h3>${id?'Modifier':'Nouveau'} rappel</h3>
+  <form onsubmit="saveReminder(event,'${id||''}')">
+    <div class="field"><label>Titre *</label><input name="titre" required value="${esc(r.titre||'')}" placeholder="Ex : Renouveler l'assurance flotte"></div>
+    <div class="row2">
+      <div class="field"><label>Date *</label><input name="date" type="date" required value="${esc(r.date||'')}"></div>
+      <div class="field"><label>Heure</label><input name="time" type="time" value="${esc(r.time||'')}"></div>
+    </div>
+    <div class="field"><label>Véhicule concerné</label><select name="vehicleId"><option value="">— Aucun —</option>${db.vehicles.map(v=>`<option value="${v.id}" ${r.vehicleId===v.id?'selected':''}>${esc(vehName(v.id))}</option>`).join('')}</select></div>
+    <div class="field"><label>Notes</label><textarea name="notes" rows="2">${esc(r.notes||'')}</textarea></div>
+    ${id?`<div class="field"><label><input type="checkbox" name="done" ${r.done?'checked':''} style="width:auto;margin-right:6px">Marquer comme fait</label></div>`:''}
+    <div class="modal-actions"><button type="button" class="btn ghost" onclick="closeModal()">Annuler</button><button class="btn">Enregistrer</button></div>
+  </form>`);
+}
+function saveReminder(e,id){
+  e.preventDefault();
+  const fd=new FormData(e.target);
+  const f=Object.fromEntries(fd);
+  f.done=fd.get('done')==='on';
+  if(id){ Object.assign(db.reminders.find(x=>x.id===id),f); } else { db.reminders.push({id:uid(),...f}); }
+  save(); closeModal(); route();
+}
+function toggleReminder(id){
+  const r=db.reminders.find(x=>x.id===id); r.done=!r.done; save(); route();
+}
+function delReminder(id){
+  if(!confirm('Supprimer ce rappel ?'))return;
+  db.reminders=db.reminders.filter(r=>r.id!==id); save(); route();
+}
+
+/* ================= LEGAL ================= */
+function renderLegal(){
+  setHeader('Mémo juridique','Notions clés pour le gestionnaire de flotte (France)','');
+  const S=(titre,tag,html)=>`<details class="law"><summary>${titre}<span class="law-tag">${tag}</span></summary><div class="law-body">${html}</div></details>`;
+  C().innerHTML=`
+  <div class="notice warn">⚠️ <strong>Avertissement :</strong> ces informations sont générales et fournies à titre de mémo. Elles peuvent évoluer et ne remplacent ni les textes officiels (service-public.fr, legifrance.gouv.fr) ni le conseil d'un avocat ou d'un expert-comptable.</div>
+
+  ${S('🛂 Contrôle technique','Obligation',`
+    <p><strong>Voitures et utilitaires ≤ 3,5 t :</strong> premier contrôle dans les 6 mois précédant le 4<sup>e</sup> anniversaire de la première mise en circulation, puis tous les <strong>2 ans</strong>. Pour les utilitaires, un contrôle complémentaire anti-pollution s'intercale entre deux CT.</p>
+    <p><strong>Sanction :</strong> circuler sans CT valide expose à une amende forfaitaire de 135 € et à une possible immobilisation du véhicule. Renseigne la date du prochain CT sur chaque fiche véhicule : FleetFlow t'alerte automatiquement 60 jours avant.</p>`)}
+
+  ${S('🛡️ Assurance des véhicules','Obligation',`
+    <p>Tout véhicule terrestre à moteur doit être assuré <strong>au minimum en responsabilité civile</strong> (« au tiers »), même s'il ne roule pas. Le défaut d'assurance est un délit (amende pouvant atteindre 3 750 €, suspension de permis, confiscation).</p>
+    <p>À partir de quelques véhicules, un <strong>contrat flotte</strong> est souvent plus simple et plus économique : un seul contrat, gestion des entrées/sorties de véhicules par avenant. Vérifie les garanties conducteur et marchandises transportées.</p>`)}
+
+  ${S('🪪 Permis des conducteurs','Vigilance',`
+    <p>L'employeur doit s'assurer que chaque salarié amené à conduire détient un <strong>permis valide</strong> correspondant au véhicule : vérification à l'embauche puis périodiquement (présentation du permis ou attestation sur l'honneur, à tracer par écrit).</p>
+    <p><strong>Attention :</strong> l'employeur ne peut pas consulter le solde de points d'un salarié — il est strictement personnel. Laisser conduire un salarié sans permis valide engage la responsabilité pénale du dirigeant.</p>
+    <p>Certains permis (C, CE, D) imposent une <strong>visite médicale périodique</strong> : pense à programmer un rappel dans l'agenda.</p>`)}
+
+  ${S('📸 Infractions & désignation du conducteur','Obligation',`
+    <p>Lorsqu'une infraction relevée par radar (vitesse, feu rouge, téléphone…) est commise avec un véhicule de société, le représentant légal doit <strong>désigner le conducteur</strong> dans les <strong>45 jours</strong> (art. L121-6 du Code de la route), en ligne sur antai.gouv.fr ou par courrier.</p>
+    <p><strong>À défaut de désignation :</strong> amende pouvant atteindre 675 € (forfaitaire) et jusqu'à 3 750 € pour la personne morale — en plus de l'amende initiale. Tenir un registre des affectations de véhicules (qui conduit quoi, quand) facilite énormément cette obligation : c'est exactement ce que permet l'onglet Véhicules/Conducteurs.</p>`)}
+
+  ${S('📍 Géolocalisation & RGPD','RGPD',`
+    <p>La géolocalisation des véhicules professionnels est encadrée par la CNIL : <strong>information préalable des salariés</strong> (et consultation du CSE le cas échéant), finalités légitimes définies (sécurité, optimisation des tournées, preuve de service…), <strong>pas de surveillance permanente</strong> du salarié.</p>
+    <p>Le salarié doit pouvoir <strong>désactiver la géolocalisation hors temps de travail</strong> (trajet domicile-travail, pause, usage privé autorisé). Conservation des données limitée (en principe 2 mois pour les données de localisation, plus si obligation légale). Le traitement doit figurer au <strong>registre des traitements</strong>.</p>`)}
+
+  ${S('📄 Carte grise, cession & administratif','Administratif',`
+    <p>La carte grise (certificat d'immatriculation) doit être au nom de la société et l'adresse tenue à jour (déclaration du changement <strong>dans le mois</strong>). En cas de vente ou de mise au rebut d'un véhicule, la <strong>cession doit être déclarée dans les 15 jours</strong> sur l'ANTS.</p>
+    <p>Conserve dans un dossier par véhicule : carte grise, attestation d'assurance, PV de contrôle technique, factures d'entretien (utile pour la revente et en cas de contrôle).</p>`)}
+
+  ${S('💶 Véhicule de fonction & avantage en nature','Fiscal / social',`
+    <p>Si un salarié peut utiliser un véhicule de l'entreprise <strong>à titre privé</strong> (véhicule de fonction), cela constitue un <strong>avantage en nature</strong> soumis à cotisations sociales et à l'impôt, à évaluer au forfait ou au réel et à faire figurer sur le bulletin de paie.</p>
+    <p>Un <strong>véhicule de service</strong> (usage strictement professionnel, restitué en dehors des heures) n'est pas un avantage en nature — mais l'usage doit être réellement encadré (note de service, carnet de bord). En cas de doute, vois avec ton expert-comptable.</p>
+    <p>Pense aussi à la <strong>TVS remplacée par les taxes annuelles sur l'affectation des véhicules de tourisme à des fins économiques</strong> pour les véhicules de tourisme des sociétés.</p>`)}
+
+  ${S('🦺 Obligation de sécurité de l’employeur','Responsabilité',`
+    <p>L'employeur a une <strong>obligation générale de sécurité</strong> envers ses salariés (art. L4121-1 du Code du travail), qui s'applique pleinement au risque routier — première cause d'accident mortel au travail.</p>
+    <p>Concrètement : véhicules <strong>entretenus et conformes</strong> (pneus, freins, éclairage), équipements obligatoires à bord (gilet haute visibilité, triangle), pas de surcharge, organisation du travail évitant la fatigue et l'usage du téléphone au volant. Le plan de maintenance de FleetFlow sert aussi de <strong>preuve de diligence</strong> en cas d'accident.</p>`)}
+
+  ${S('🚛 Poids lourds & temps de conduite','Si applicable',`
+    <p>Pour les véhicules > 3,5 t : <strong>chronotachygraphe</strong> obligatoire, respect des temps de conduite et de repos (règlement européen), formation FIMO/FCO des conducteurs, et contrôle technique <strong>annuel</strong>.</p>
+    <p>Ces obligations sont spécifiques et contrôlées — si ta flotte comprend des poids lourds, fais valider ton organisation par un spécialiste du transport.</p>`)}
+
+  <div class="panel" style="margin-top:18px"><h2>✅ Check-list rapide du gestionnaire</h2><div class="body" style="font-size:13.5px;line-height:1.9">
+    1. Chaque véhicule a une date de CT renseignée (alerte automatique).<br>
+    2. Chaque conducteur a un permis vérifié et tracé.<br>
+    3. Les affectations véhicule ↔ conducteur sont à jour (désignation en 45 j).<br>
+    4. L'assurance flotte couvre tous les véhicules actifs.<br>
+    5. Les entretiens sont planifiés et l'historique conservé.<br>
+    6. Les salariés sont informés de toute géolocalisation.<br>
+    7. Les usages privés sont déclarés en avantage en nature.<br>
+    <span style="color:var(--muted)">Astuce : programme des rappels récurrents (assurance, visites médicales) dans l'onglet Agenda.</span>
+  </div></div>`;
+}
+
+/* ================= SETTINGS ================= */
+function renderSettings(){
+  setHeader('Paramètres','Compte, sécurité, sauvegarde et données','');
+  let secHtml='';
+  if(CLOUD&&user){
+    secHtml=`
+  <div class="panel"><h2>🔐 Compte & sécurité</h2><div class="body">
+    <p style="font-size:13.5px;margin-bottom:14px">Connecté en tant que <strong>${esc(user.email||'')}</strong></p>
+    <div id="mfa-status" style="margin-bottom:14px"><span class="badge b-gray">Vérification 2FA…</span></div>
+    <button class="btn ghost" onclick="openChangePassword()">Changer le mot de passe</button>
+  </div></div>`;
+  } else if(!CLOUD){
+    secHtml=`
+  <div class="panel"><h2>🔐 Compte & sécurité</h2><div class="body">
+    <div class="notice warn">L'application fonctionne en <strong>mode local</strong> : pas de compte, données stockées uniquement dans ce navigateur.<br><br>
+    Pour activer la connexion sécurisée (email/mot de passe, <strong>double authentification</strong>, <strong>connexion Google</strong>) et la synchronisation cloud, suis le <strong>guide de déploiement</strong> fourni avec l'application : il suffit de créer un projet Supabase gratuit et de coller 2 valeurs en haut du fichier <code>index.html</code>.</div>
+  </div></div>`;
+  }
+  C().innerHTML=`${secHtml}
+  <div class="panel"><h2>💾 Sauvegarde & restauration</h2><div class="body">
+    <p style="font-size:13.5px;color:var(--muted);margin-bottom:14px">${CLOUD&&user?'Tes données sont synchronisées dans le cloud et liées à ton compte. Tu peux aussi exporter une copie de secours.':'Les données sont stockées dans le navigateur de cet appareil. Exporte régulièrement un fichier de sauvegarde.'}</p>
+    <button class="btn" onclick="exportData()">⬇️ Exporter les données (JSON)</button>
+    <button class="btn ghost" onclick="document.getElementById('importFile').click()">⬆️ Importer une sauvegarde</button>
+    <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(this)">
+  </div></div>
+  <div class="panel"><h2>🧪 Données de démonstration</h2><div class="body">
+    <p style="font-size:13.5px;color:var(--muted);margin-bottom:14px">Charge un jeu d'exemple (véhicules, conducteurs, entretiens, pleins, rappels) pour découvrir l'outil. Cela remplace les données actuelles.</p>
+    <button class="btn ghost" onclick="loadDemo()">Charger la démo</button>
+  </div></div>
+  <div class="panel"><h2>🗑️ Zone dangereuse</h2><div class="body">
+    <button class="btn danger" onclick="resetAll()">Tout effacer</button>
+  </div></div>`;
+  if(CLOUD&&user) refreshMfaStatus();
+}
+async function refreshMfaStatus(){
+  const el=document.getElementById('mfa-status'); if(!el)return;
+  const {data,error}=await sb.auth.mfa.listFactors();
+  if(error){ el.innerHTML='<span class="badge b-danger">Erreur 2FA</span>'; return; }
+  const f=(data.totp||[]).find(x=>x.status==='verified');
+  if(f){
+    el.innerHTML=`<span class="badge b-ok">✓ Double authentification activée</span>
+    <button class="btn ghost sm" style="margin-left:10px" onclick="disableMfa('${f.id}')">Désactiver</button>`;
+  } else {
+    el.innerHTML=`<span class="badge b-warn">Double authentification désactivée</span>
+    <button class="btn sm" style="margin-left:10px" onclick="enableMfa()">🔐 Activer la 2FA</button>
+    <p style="font-size:12.5px;color:var(--muted);margin-top:8px">Fortement recommandé : un code à 6 chiffres (Google Authenticator, Authy…) sera demandé à chaque connexion.</p>`;
+  }
+}
+let enrollData=null;
+async function enableMfa(){
+  /* nettoie les éventuels facteurs non vérifiés */
+  const {data:lf}=await sb.auth.mfa.listFactors();
+  for(const f of (lf&&lf.all||[]).filter(x=>x.status!=='verified')){ try{await sb.auth.mfa.unenroll({factorId:f.id});}catch(e){} }
+  const {data,error}=await sb.auth.mfa.enroll({factorType:'totp',friendlyName:'FleetFlow'});
+  if(error){ alert('Erreur : '+error.message); return; }
+  enrollData=data;
+  openModal(`<h3>🔐 Activer la double authentification</h3>
+  <p style="font-size:13.5px;color:var(--muted)">1. Ouvre <strong>Google Authenticator</strong> (ou Authy, 1Password…)<br>2. Scanne ce QR code<br>3. Saisis le code à 6 chiffres généré</p>
+  <div class="qr-box"><img src="${data.totp.qr_code}" alt="QR code 2FA"></div>
+  <p style="font-size:12px;color:var(--muted);text-align:center;margin-bottom:6px">Ou saisis cette clé manuellement :</p>
+  <div class="secret-box">${esc(data.totp.secret)}</div>
+  <form onsubmit="confirmMfa(event)">
+    <div class="field mfa-code"><input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required placeholder="••••••"></div>
+    <div class="modal-actions"><button type="button" class="btn ghost" onclick="cancelMfa()">Annuler</button><button class="btn">Activer</button></div>
+  </form>
+  <div id="mfa-modal-msg"></div>`);
+}
+async function confirmMfa(e){
+  e.preventDefault();
+  const code=new FormData(e.target).get('code');
+  const {data:ch,error:e1}=await sb.auth.mfa.challenge({factorId:enrollData.id});
+  if(e1){ document.getElementById('mfa-modal-msg').innerHTML=`<div class="notice err">${esc(e1.message)}</div>`; return; }
+  const {error:e2}=await sb.auth.mfa.verify({factorId:enrollData.id,challengeId:ch.id,code});
+  if(e2){ document.getElementById('mfa-modal-msg').innerHTML=`<div class="notice err">Code invalide, réessaie.</div>`; return; }
+  closeModal(); enrollData=null;
+  alert('Double authentification activée ✅');
+  refreshMfaStatus();
+}
+async function cancelMfa(){
+  if(enrollData){ try{await sb.auth.mfa.unenroll({factorId:enrollData.id});}catch(e){} enrollData=null; }
+  closeModal();
+}
+async function disableMfa(factorId){
+  if(!confirm('Désactiver la double authentification ?'))return;
+  const {error}=await sb.auth.mfa.unenroll({factorId});
+  if(error){ alert('Erreur : '+error.message+'\n(Reconnecte-toi avec ton code 2FA puis réessaie.)'); return; }
+  refreshMfaStatus();
+}
+function openChangePassword(){
+  openModal(`<h3>Changer le mot de passe</h3>
+  <form onsubmit="doChangePassword(event)">
+    <div class="field"><label>Nouveau mot de passe</label><input name="password" type="password" required minlength="8"></div>
+    <div class="modal-actions"><button type="button" class="btn ghost" onclick="closeModal()">Annuler</button><button class="btn">Mettre à jour</button></div>
+  </form>`);
+}
+async function doChangePassword(e){
+  e.preventDefault();
+  const p=new FormData(e.target).get('password');
+  const {error}=await sb.auth.updateUser({password:p});
+  alert(error?'Erreur : '+error.message:'Mot de passe mis à jour ✅');
+  if(!error) closeModal();
+}
+function exportData(){
+  const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`fleetflow_sauvegarde_${today()}.json`;
+  a.click();
+}
+function importData(input){
+  const file=input.files[0]; if(!file)return;
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const d=JSON.parse(r.result);
+      if(!d.vehicles||!Array.isArray(d.vehicles)) throw 0;
+      db=withDefaults(d);
+      save(); alert('Import réussi ✅'); location.hash='#dashboard'; route();
+    }catch(e){ alert('Fichier invalide.'); }
+  };
+  r.readAsText(file);
+  input.value='';
+}
+function resetAll(){
+  if(!confirm('Effacer TOUTES les données ? Cette action est irréversible.'))return;
+  db=withDefaults(); save(); route();
+}
+function loadDemo(){
+  if(db.vehicles.length&&!confirm('Remplacer les données actuelles par la démo ?'))return;
+  const d1=uid(),d2=uid(),v1=uid(),v2=uid(),v3=uid();
+  const ago=(days)=>{const d=new Date();d.setDate(d.getDate()-days);return d.toISOString().slice(0,10);};
+  const ahead=(days)=>{const d=new Date();d.setDate(d.getDate()+days);return d.toISOString().slice(0,10);};
+  db=withDefaults({
+    drivers:[
+      {id:d1,prenom:'Karim',nom:'Benali',permis:'B',tel:'06 12 34 56 78',email:'karim@exemple.fr'},
+      {id:d2,prenom:'Sophie',nom:'Martin',permis:'BE',tel:'06 98 76 54 32',email:'sophie@exemple.fr'}
+    ],
+    vehicles:[
+      {id:v1,immat:'GA-123-BC',marque:'Renault',modele:'Trafic',annee:'2021',type:'Utilitaire',statut:'mission',km:78400,driverId:d1,ctDate:ahead(25),notes:''},
+      {id:v2,immat:'FD-456-EF',marque:'Peugeot',modele:'208',annee:'2022',type:'Voiture',statut:'dispo',km:34200,driverId:d2,ctDate:ahead(320),notes:''},
+      {id:v3,immat:'EX-789-GH',marque:'Citroën',modele:'Berlingo',annee:'2019',type:'Utilitaire',statut:'garage',km:112600,driverId:'',ctDate:ago(10),notes:'Embrayage à vérifier'}
+    ],
+    maints:[
+      {id:uid(),vehicleId:v1,type:'Vidange',statut:'fait',date:ago(45),km:75000,cout:129,notes:''},
+      {id:uid(),vehicleId:v1,type:'Révision',statut:'planifie',date:ahead(12),km:'',cout:350,notes:'Révision 80 000 km'},
+      {id:uid(),vehicleId:v3,type:'Freins',statut:'planifie',date:ago(5),km:'',cout:280,notes:'Plaquettes avant'},
+      {id:uid(),vehicleId:v2,type:'Pneus',statut:'fait',date:ago(90),km:30000,cout:420,notes:'4 pneus été'}
+    ],
+    fuels:[
+      {id:uid(),vehicleId:v1,date:ago(30),litres:62,montant:105.4,km:76100},
+      {id:uid(),vehicleId:v1,date:ago(14),litres:60,montant:102,km:77300},
+      {id:uid(),vehicleId:v1,date:ago(3),litres:58,montant:98.6,km:78400},
+      {id:uid(),vehicleId:v2,date:ago(20),litres:38,montant:68.4,km:33400},
+      {id:uid(),vehicleId:v2,date:ago(4),litres:36,montant:64.8,km:34200},
+      {id:uid(),vehicleId:v3,date:ago(60),litres:55,montant:93.5,km:111800}
+    ],
+    reminders:[
+      {id:uid(),titre:'Renouveler assurance flotte',date:ahead(18),time:'09:00',vehicleId:'',notes:'Comparer 2 devis avant renouvellement',done:false},
+      {id:uid(),titre:'Vérifier permis (attestations annuelles)',date:ahead(40),time:'',vehicleId:'',notes:'',done:false},
+      {id:uid(),titre:'RDV garage — embrayage',date:ahead(6),time:'14:30',vehicleId:v3,notes:'Garage Centra, devis accepté',done:false}
+    ]
+  });
+  save(); location.hash='#dashboard'; route();
+}
+
+/* ================= MODAL ================= */
+function openModal(html){
+  document.getElementById('modal').innerHTML=html;
+  document.getElementById('overlay').classList.add('open');
+}
+function closeModal(){ document.getElementById('overlay').classList.remove('open'); }
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+
+/* ================= INIT ================= */
+async function init(){
+  renderSideFoot();
+  if(!CLOUD){ route(); return; }
+  sb.auth.onAuthStateChange(async (event)=>{
+    if(event==='PASSWORD_RECOVERY'){ showAuth('recovery'); }
+  });
+  /* gère aussi le retour OAuth Google (session présente dans l'URL) */
+  const {data:{session}}=await sb.auth.getSession();
+  if(session){ await afterSession(); }
+  else { showAuth('login'); }
+}
+init();
+</script>
+</body>
+</html>
